@@ -688,101 +688,52 @@ static CFDictionaryRef hooked_CNCopyCurrentNetworkInfo(CFStringRef interfaceName
 
 #pragma mark - Initialization
 
+%end
+
+
 %ctor {
     @autoreleasepool {
-        
-        PXLog(@"[NetworkHook] Initializing network connection type hooks");
-        
-        // Initialize CoreTelephony hooks
-        %init;
-        
-        // Initialize Network.framework hooks if available
-        Class NWPathClass = NSClassFromString(@"NWPath");
-        if (NWPathClass) {
-            %init(NetworkFrameworkHooks);
-            PXLog(@"[NetworkHook] Successfully initialized Network.framework hooks");
+        if (!PXHookEnabled(@"network")) {
+            PXLog(@"[NetworkHook] network hooks disabled");
+            return;
         }
-        
+
+        PXLog(@"[NetworkHook] Initializing network connection type hooks");
+
+        // Initialize all Logos hooks in this file (CTTelephony, CTCarrier, NWPath, etc.)
+        %init(PX_network);
+
         // Setup the SCNetworkReachabilityGetFlags hook
         void *SCNetworkReachabilityGetFlagsPtr = dlsym(RTLD_DEFAULT, "SCNetworkReachabilityGetFlags");
         if (SCNetworkReachabilityGetFlagsPtr) {
-            // Use ElleKit for hooking (preferred for iOS 15+)
-            MSHookFunction(SCNetworkReachabilityGetFlagsPtr, 
-                    (void *)hooked_SCNetworkReachabilityGetFlags, 
-                    (void **)&original_SCNetworkReachabilityGetFlags);
+            MSHookFunction(SCNetworkReachabilityGetFlagsPtr,
+                           (void *)hooked_SCNetworkReachabilityGetFlags,
+                           (void **)&original_SCNetworkReachabilityGetFlags);
             PXLog(@"[NetworkHook] Successfully hooked SCNetworkReachabilityGetFlags");
         } else {
             PXLog(@"[NetworkHook] ERROR: Could not find SCNetworkReachabilityGetFlags function!");
         }
-        
+
         // Enable getifaddrs hook for local IP spoofing
         void *getifaddrsPtr = dlsym(RTLD_DEFAULT, "getifaddrs");
         if (getifaddrsPtr) {
-            MSHookFunction(getifaddrsPtr, (void *)hooked_getifaddrs, (void **)&original_getifaddrs);
+            MSHookFunction(getifaddrsPtr,
+                           (void *)hooked_getifaddrs,
+                           (void **)&original_getifaddrs);
             PXLog(@"[NetworkHook] Successfully hooked getifaddrs for local IP spoofing");
         } else {
             PXLog(@"[NetworkHook] ERROR: Could not find getifaddrs function!");
         }
-        
-        NetworkInfo * networkInfo = CurrentPhoneInfo().networkInfo;
-        // Log initial state
-        NetworkConnectionType initialType = networkInfo.connectionType;
-        if (initialType != -1) {
-            NSString *connectionName;
-            switch (initialType) {
-                case NetworkConnectionTypeNone:
-                    connectionName = @"None";
-                    break;
-                case NetworkConnectionTypeWiFi:
-                    connectionName = @"WiFi";
-                    break;
-                case NetworkConnectionTypeCellular:
-                    connectionName = @"Cellular";
-                    break;
-                case NetworkConnectionTypeAuto:
-                    connectionName = @"Auto";
-                    break;
-                default:
-                    connectionName = @"Unknown";
-                    break;
-            }
-            
-            if (initialType == NetworkConnectionTypeWiFi || 
-                (initialType == NetworkConnectionTypeAuto && shouldUseWiFiForAutoMode())) {
-                NSString *localIP = networkInfo.localIPAddress;
-                PXLog(@"[NetworkHook] Network connection type spoofing enabled with type: %@ (Local IP: %@) for scoped app", 
-                        connectionName, localIP);
-            } else if (initialType == NetworkConnectionTypeCellular ||
-                        (initialType == NetworkConnectionTypeAuto && !shouldUseWiFiForAutoMode())) {
-                NSString *isoCode = getCurrentISOCountryCode();
-                PXLog(@"[NetworkHook] Network connection type spoofing enabled with type: %@ (ISO: %@) for scoped app", 
-                        connectionName, isoCode);
-            } else {
-                PXLog(@"[NetworkHook] Network connection type spoofing enabled with type: %@ for scoped app", 
-                        connectionName);
-            }
-        } else {
-            PXLog(@"[NetworkHook] Network connection type spoofing disabled");
-        }
-        
-        // Setup CNCopyCurrentNetworkInfo hook for WiFi signal strength
+
+        // Setup CNCopyCurrentNetworkInfo hook for WiFi signal strength spoofing
         void *CNCopyCurrentNetworkInfoPtr = dlsym(RTLD_DEFAULT, "CNCopyCurrentNetworkInfo");
         if (CNCopyCurrentNetworkInfoPtr) {
             MSHookFunction(CNCopyCurrentNetworkInfoPtr,
-                    (void *)hooked_CNCopyCurrentNetworkInfo,
-                    (void **)&original_CNCopyCurrentNetworkInfo);
+                           (void *)hooked_CNCopyCurrentNetworkInfo,
+                           (void **)&original_CNCopyCurrentNetworkInfo);
             PXLog(@"[NetworkHook] Successfully hooked CNCopyCurrentNetworkInfo for WiFi signal strength spoofing");
         } else {
             PXLog(@"[NetworkHook] ERROR: Could not find CNCopyCurrentNetworkInfo function!");
         }
-    
-    }
-} 
-
-%end
-
-%ctor {
-    if (PXHookEnabled(@"network")) {
-        %init(PX_network);
     }
 }
