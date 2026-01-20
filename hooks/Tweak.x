@@ -36,7 +36,6 @@
 
 
 // Define hook group for main identifier spoofing
-%group Identifiers
 
 // // MGCopyAnswer hook for various system identifiers
 // %hookf(NSString *, MGCopyAnswer, CFStringRef property) {
@@ -193,7 +192,6 @@
 %end
 
 
-%end // End of Identifiers group
 
 
 
