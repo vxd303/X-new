@@ -584,7 +584,6 @@ static int hooked_getifaddrs(struct ifaddrs **ifap) {
 #pragma mark - Network.framework Hooks (iOS 12+)
 
 // Attempt to hook NWPathMonitor for newer iOS versions
-%group NetworkFrameworkHooks
 
 %hook NWPath
 
@@ -625,7 +624,6 @@ static int hooked_getifaddrs(struct ifaddrs **ifap) {
 
 %end
 
-%end
 
 
 // Hook for WiFi signal strength (CNCopyCurrentNetworkInfo)
