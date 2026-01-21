@@ -10,13 +10,12 @@
 #endif
 #endif
 
+// Daemon đang post notify này trong WebServerManager
 CFStringRef const kPXHookPrefsChangedNotification = CFSTR("com.projectx.hookprefs.changed");
 
 static NSDictionary *gPXPrefs = nil;
 
-// Dedicated lock for prefs access.
-// Do NOT synchronize on a class name (e.g. [PXHookOptions class]) because this
-// file is C-function based and may not declare such an Objective-C class.
+// Dedicated lock object (không synchronize trên class chưa chắc tồn tại)
 static NSObject *PXPrefsLock(void) {
     static NSObject *lockObj = nil;
     static dispatch_once_t onceToken;
@@ -26,29 +25,22 @@ static NSObject *PXPrefsLock(void) {
     return lockObj;
 }
 
+// ✅ IMPORTANT:
+// Daemon lưu HookOptions vào ProjectXTweak.plist (cùng file filter Bundles).
+// Vì vậy tweak cũng phải đọc từ đây.
 static NSString *PXPrefsPath(void) {
-    // IMPORTANT:
-    // - Hook options (global defaults + per-app overrides) are stored/served by the daemon
-    //   via /var/mobile/Library/Preferences/com.projectx.hookprefs.plist.
-    // - /Library/MobileSubstrate/DynamicLibraries/ProjectXTweak.plist is used as the
-    //   MobileSubstrate filter list (Bundles) by the injection mechanism.
-    //
-    // We prefer the daemon prefs file, but keep a fallback to the legacy path to avoid
-    // breaking existing installs.
-    NSString *daemonPrefs = jbroot(@"/var/mobile/Library/Preferences/com.projectx.hookprefs.plist");
-    if ([[NSFileManager defaultManager] fileExistsAtPath:daemonPrefs]) {
-        return daemonPrefs;
+    NSString *tweakPlist = jbroot(@"/Library/MobileSubstrate/DynamicLibraries/ProjectXTweak.plist");
+    if ([[NSFileManager defaultManager] fileExistsAtPath:tweakPlist]) {
+        return tweakPlist;
     }
-    return jbroot(@"/Library/MobileSubstrate/DynamicLibraries/ProjectXTweak.plist");
+
+    // Fallback legacy (nếu bạn từng dùng file prefs riêng)
+    NSString *legacy = jbroot(@"/var/mobile/Library/Preferences/com.projectx.hookprefs.plist");
+    return legacy;
 }
 
-// Resolve the current process bundle identifier as early and reliably as possible.
-// When a dylib is injected very early, `-[NSBundle mainBundle] bundleIdentifier`
-// can sometimes be empty temporarily. CFBundleGetIdentifier is typically available
-// earlier.
+// Backwards-compatible wrapper
 NSString *PXCurrentBundleIdentifier(void) {
-    // Backwards-compatible wrapper used by older code paths.
-    // Use the shared helper so callers always get a non-nil value.
     return PXSafeBundleIdentifier();
 }
 
@@ -78,7 +70,7 @@ static NSDictionary *PXPrefs(void) {
 BOOL PXHookEnabled(NSString *key) {
     if (key.length == 0) return YES;
 
-	NSString *bundleID = PXCurrentBundleIdentifier() ?: @"";
+    NSString *bundleID = PXCurrentBundleIdentifier() ?: @"";
     NSDictionary *prefs = PXPrefs();
 
     NSDictionary *global = prefs[@"HookOptions"];
@@ -96,7 +88,7 @@ BOOL PXHookEnabled(NSString *key) {
     if ([v isKindOfClass:[NSNumber class]]) {
         return [(NSNumber *)v boolValue];
     }
-    return YES;
+    return YES; // default ON nếu không có config
 }
 
 static void PXPrefsChanged(CFNotificationCenterRef center,
