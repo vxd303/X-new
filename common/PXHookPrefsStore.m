@@ -122,6 +122,22 @@ static void PXPostChangeNotification(void) {
     PXPostChangeNotification();
 }
 
++ (void)savePerAppOptions:(NSDictionary<NSString *,NSDictionary<NSString *,NSNumber *> *> *)perAppOptions {
+    // Save the entire per-app dictionary in one shot (used by UI Save button).
+    if (!perAppOptions) {
+        PXPrefsSetValue(kPXHookPrefsKeyPerApp, @{});
+        PXPrefsSync();
+        return;
+    }
+    NSMutableDictionary *sanitized = [NSMutableDictionary dictionary];
+    [perAppOptions enumerateKeysAndObjectsUsingBlock:^(NSString *bundleID, NSDictionary<NSString *,NSNumber *> *opts, BOOL *stop) {
+        if (bundleID.length == 0) return;
+        sanitized[bundleID] = PXSanitizeOptions(opts);
+    }];
+    PXPrefsSetValue(kPXHookPrefsKeyPerApp, [sanitized copy]);
+    PXPrefsSync();
+}
+
 + (void)savePerAppOptions:(NSDictionary<NSString *,NSNumber *> *)options forApp:(NSString *)bundleIdentifier {
     if (bundleIdentifier.length == 0) return;
 
