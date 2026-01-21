@@ -1,5 +1,7 @@
 #import "HookOptionsViewController.h"
-#import "DaemonApiManager.h"
+#import "DaemonApiManager.h" // kept for later HTTP integration
+#import "PXHookPrefsStore.h"
+#import "PXHookKeys.h"
 #import <notify.h>
 
 static NSString * const kDefaultTargetBundleID = @"com.facebook.Facebook";
@@ -10,7 +12,7 @@ typedef NS_ENUM(NSInteger, PXSection) {
     PXSectionPerApp = 1,
 };
 
-@interface HookOptionsViewController ()
+@interface HookOptionsViewController () <UIDocumentPickerDelegate>
 @property (nonatomic, strong) NSArray<NSDictionary *> *hookItems; // {key,title}
 @property (nonatomic, strong) NSMutableDictionary *globalOptions;
 @property (nonatomic, strong) NSMutableDictionary *perAppOptionsAll;
@@ -22,34 +24,48 @@ typedef NS_ENUM(NSInteger, PXSection) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Hooks";
+
+    // Save/Export/Import + Reset
+    UIBarButtonItem *saveBtn = [[UIBarButtonItem alloc] initWithTitle:@"Save" style:UIBarButtonItemStyleDone target:self action:@selector(saveToStorage)];
+    UIBarButtonItem *exportBtn = [[UIBarButtonItem alloc] initWithTitle:@"Export" style:UIBarButtonItemStylePlain target:self action:@selector(exportConfig)];
+    UIBarButtonItem *importBtn = [[UIBarButtonItem alloc] initWithTitle:@"Import" style:UIBarButtonItemStylePlain target:self action:@selector(importConfig)];
+    self.navigationItem.rightBarButtonItems = @[saveBtn, exportBtn, importBtn];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Reset" style:UIBarButtonItemStylePlain target:self action:@selector(resetMenu)];
     self.targetBundleID = kDefaultTargetBundleID;
 
-    self.hookItems = @[
-        @{@"key": @"core", @"title": @"Core spoofing"},
-        @{@"key": @"devicemodel", @"title": @"Device Model"},
-        @{@"key": @"devicespec", @"title": @"Device Specs"},
-        @{@"key": @"iosversion", @"title": @"iOS Version"},
-        @{@"key": @"uuid", @"title": @"UUID"},
-        @{@"key": @"wifi", @"title": @"Wi‑Fi"},
-        @{@"key": @"network", @"title": @"Network Type"},
-        @{@"key": @"battery", @"title": @"Battery"},
-        @{@"key": @"storage", @"title": @"Storage"},
-        @{@"key": @"pasteboard", @"title": @"Pasteboard"},
-        @{@"key": @"userdefaults", @"title": @"UserDefaults"},
-        @{@"key": @"canvas", @"title": @"Canvas Fingerprint"},
-        @{@"key": @"boottime", @"title": @"Boot Time"},
-    ];
+    NSDictionary<NSString *, NSString *> *titleMap = @{
+        @"battery": @"Battery",
+        @"boottime": @"Boot Time",
+        @"canvas": @"Canvas Fingerprint",
+        @"core": @"Core spoofing",
+        @"devicemodel": @"Device Model",
+        @"devicespec": @"Device Specs",
+        @"identifier": @"Identifiers",
+        @"iosversion": @"iOS Version",
+        @"jailbreak": @"Jailbreak",
+        @"network": @"Network Type",
+        @"pasteboard": @"Pasteboard",
+        @"storage": @"Storage",
+        @"userdefaults": @"UserDefaults",
+        @"uuid": @"UUID",
+        @"wifi": @"Wi‑Fi",
+    };
 
-    [self reloadFromDaemon];
+    NSMutableArray *items = [NSMutableArray array];
+    for (NSString *key in PXAllHookKeys()) {
+        NSString *title = titleMap[key] ?: [key capitalizedString];
+        [items addObject:@{@"key": key, @"title": title}];
+    }
+    self.hookItems = items;
+
+    [self reloadFromStorage];
 }
 
-- (void)reloadFromDaemon {
-    NSDictionary *data = [[DaemonApiManager sharedManager] getHookOptions];
-    NSDictionary *g = data[@"HookOptions"];
-    NSDictionary *p = data[@"PerAppHookOptions"];
 
-    self.globalOptions = [([g isKindOfClass:[NSDictionary class]] ? g : @{}) mutableCopy];
-    self.perAppOptionsAll = [([p isKindOfClass:[NSDictionary class]] ? p : @{}) mutableCopy];
+- (void)reloadFromStorage {
+    // Global + per-app dictionaries live in local preferences.
+    self.globalOptions = [[PXHookPrefsStore globalOptions] mutableCopy];
+    self.perAppOptionsAll = [[PXHookPrefsStore perAppOptionsAll] mutableCopy];
 
     [self.tableView reloadData];
 }
@@ -82,13 +98,59 @@ typedef NS_ENUM(NSInteger, PXSection) {
         self.globalOptions[key] = @(enabled);
     }
 
-    NSDictionary *payload = @{
-        @"HookOptions": self.globalOptions ?: @{},
-        @"PerAppHookOptions": self.perAppOptionsAll ?: @{}
-    };
-    [[DaemonApiManager sharedManager] saveHookOptions:payload];
+    // Persist only when user taps "Save" (so they can batch edits)
+}
 
+#pragma mark - Actions
+
+- (void)saveToStorage {
+    [PXHookPrefsStore saveGlobalOptions:self.globalOptions ?: @{}];
+    [PXHookPrefsStore savePerAppOptions:self.perAppOptionsAll ?: @{}];
     notify_post(kPrefsChangedNotifyName);
+
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Saved" message:@"Hook options were saved to local preferences." preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+- (void)resetMenu {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Reset" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Reset ALL (global + all apps)" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [PXHookPrefsStore resetAllToDefault];
+        [self reloadFromStorage];
+        notify_post(kPrefsChangedNotifyName);
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Reset global defaults" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [PXHookPrefsStore resetGlobalToDefault];
+        [self reloadFromStorage];
+        notify_post(kPrefsChangedNotifyName);
+    }]];
+    if (self.targetBundleID.length) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Reset this app" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+            [PXHookPrefsStore resetAppToDefault:self.targetBundleID];
+            [self reloadFromStorage];
+            notify_post(kPrefsChangedNotifyName);
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.barButtonItem = self.navigationItem.leftBarButtonItem;
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)exportConfig {
+    NSURL *fileURL = [PXHookPrefsStore exportConfigToTemporaryFile];
+    if (!fileURL) return;
+
+    UIActivityViewController *av = [[UIActivityViewController alloc] initWithActivityItems:@[fileURL] applicationActivities:nil];
+    av.popoverPresentationController.barButtonItem = self.navigationItem.rightBarButtonItems.lastObject;
+    [self presentViewController:av animated:YES completion:nil];
+}
+
+- (void)importConfig {
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.json", @"com.apple.property-list"] inMode:UIDocumentPickerModeImport];
+    picker.delegate = (id<UIDocumentPickerDelegate>)self;
+    picker.modalPresentationStyle = UIModalPresentationFormSheet;
+    [self presentViewController:picker animated:YES completion:nil];
 }
 
 #pragma mark - Table
