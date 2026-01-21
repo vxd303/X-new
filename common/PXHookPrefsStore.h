@@ -19,8 +19,14 @@ extern NSString * const PXHookPrefsDarwinNotification;
 /// Returns the stored global options merged with defaults. Guaranteed to contain all known keys.
 + (NSDictionary<NSString *, NSNumber *> *)globalOptions;
 
+/// Legacy alias (older UI code).
++ (NSDictionary<NSString *, NSNumber *> *)globalHookOptions;
+
 /// Returns all per-app overrides (may be empty). Values are merged with defaults per-app.
 + (NSDictionary<NSString *, NSDictionary<NSString *, NSNumber *> *> *)allPerAppOptions;
+
+/// Legacy alias (older UI code).
++ (NSDictionary<NSString *, NSDictionary<NSString *, NSNumber *> *> *)perAppOptionsAll;
 
 /// Returns merged options for a specific bundle id. If no per-app override exists, returns globalOptions.
 + (NSDictionary<NSString *, NSNumber *> *)optionsForBundleID:(NSString *)bundleID;
@@ -37,10 +43,18 @@ extern NSString * const PXHookPrefsDarwinNotification;
 + (void)resetBundleIDToDefaults:(NSString *)bundleID;
 + (void)resetAllToDefaults;
 
+/// Legacy aliases (older UI code).
++ (void)resetGlobalToDefault;
++ (void)resetAppToDefault:(NSString *)bundleID;
++ (void)resetAllToDefault;
+
 /// Export / import
 /// Export returns a file URL in /tmp.
 + (nullable NSURL *)exportConfigurationToTemporaryJSON:(NSError * _Nullable * _Nullable)error;
 + (BOOL)importConfigurationFromJSONURL:(NSURL *)url error:(NSError * _Nullable * _Nullable)error;
+
+/// Legacy alias (older UI code): export without error param.
++ (nullable NSURL *)exportConfigToTemporaryFile;
 
 @end
 
