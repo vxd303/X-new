@@ -66,6 +66,36 @@ static void PXPostChangeNotification(void) {
 
 @implementation PXHookPrefsStore
 
+#pragma mark - Compatibility aliases
+
++ (NSDictionary<NSString *, NSNumber *> *)globalHookOptions {
+    return [self globalOptions];
+}
+
++ (NSDictionary<NSString *, NSDictionary<NSString *, NSNumber *> *> *)allPerAppOptions {
+    return [self perAppOptionsAll];
+}
+
++ (void)resetGlobalToDefaults {
+    [self resetGlobalToDefault];
+}
+
++ (void)resetBundleIDToDefaults:(NSString *)bundleID {
+    [self resetAppToDefault:bundleID];
+}
+
++ (void)resetAllToDefaults {
+    [self resetAllToDefault];
+}
+
++ (NSURL *)exportConfigToTemporaryFile {
+    return [self exportConfigToTemporaryFile:nil];
+}
+
++ (NSURL *)exportConfigurationToTemporaryJSON:(NSError *__autoreleasing  _Nullable *)error {
+    return [self exportConfigToTemporaryFile:error];
+}
+
 + (NSDictionary<NSString *,NSNumber *> *)globalOptions {
     return PXSanitizeOptions(PXPrefsCopyValue(kPXHookPrefsKeyGlobal));
 }
