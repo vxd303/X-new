@@ -1,7 +1,7 @@
 #import "HookOptionsViewController.h"
 #import "DaemonApiManager.h" // kept for later HTTP integration
 #import "PXHookPrefsStore.h"
-#import "PXHookKeys.h"
+#import "common/PXHookKeys.h"
 #import <notify.h>
 
 static NSString * const kDefaultTargetBundleID = @"com.facebook.Facebook";
