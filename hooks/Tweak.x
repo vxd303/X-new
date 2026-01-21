@@ -18,7 +18,6 @@
 #import <sys/utsname.h>
 #import <Security/Security.h>
 #import <CoreTelephony/CTTelephonyNetworkInfo.h>
-#import "PXBundleIdentifier.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreMotion/CoreMotion.h> // Import CoreMotion framework for sensor spoofing
 #import "DataManager.h"
@@ -42,7 +41,7 @@
 // %hookf(NSString *, MGCopyAnswer, CFStringRef property) {
 //     PhoneInfo * phoneInfo = CurrentPhoneInfo();
 //     NSString *propertyString = (__bridge NSString *)property;
-//     NSString *currentBundleID = PXSafeBundleIdentifier();
+//     NSString *currentBundleID = [[NSBundle mainBundle] bundleIdentifier];
     
 //     PXLog(@"MGCopyAnswer requested for property: %@ by app: %@", propertyString, currentBundleID);
     
@@ -210,7 +209,7 @@ CFTypeRef hook_IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStri
     @try {
  
         
-        NSString *currentBundleID = PXSafeBundleIdentifier();
+        NSString *currentBundleID = [[NSBundle mainBundle] bundleIdentifier];
         
         
         // Convert CoreFoundation key to NSString for easier handling
@@ -263,7 +262,7 @@ CFTypeRef hook_IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStri
 static char* (*orig_GSSystemGetSerialNo)(void);
 
 static char* hook_GSSystemGetSerialNo(void) {
-    NSString *currentBundleID = PXSafeBundleIdentifier();
+    NSString *currentBundleID = [[NSBundle mainBundle] bundleIdentifier];
     
     PXLog(@"GSSystemGetSerialNo requested by app: %@", currentBundleID);
     
@@ -302,6 +301,15 @@ static char* hook_GSSystemGetSerialNo(void) {
 // Constructor
 %ctor {    
     PXLog(@"ProjectX tweak initializing...");
+
+    // IMPORTANT: This %ctor executes inside every process that loads ProjectXTweak.
+    // Any unconditional hooks placed here will affect apps even when Per-App Override
+    // disables hooks for a specific bundle id (e.g. com.finalwire.aida64).
+    // Gate this ctor behind the global/per-app 'core' switch.
+    if (!PXHookEnabled(@"core")) {
+        PXLog(@"[Tweak] core hook disabled for %@; skipping global ctor hooks", PXSafeBundleIdentifier());
+        return;
+    }
 
     
     // Load saved settings and ensure synchronization
