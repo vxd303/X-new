@@ -33,52 +33,26 @@ static NSString * const kPXHookPrefsGlobalKey = @"GlobalOptions";
 static NSString * const kPXHookPrefsPerAppKey = @"PerAppOptions";
 
 static NSDictionary *PXCopyPrefsSnapshot(void) {
-    // Values are stored as individual keys in CFPreferences domain.
-    CFPropertyListRef gVal = CFPreferencesCopyAppValue((CFStringRef)kPXHookPrefsGlobalKey, (CFStringRef)kPXHookPrefsDomain);
-    CFPropertyListRef pVal = CFPreferencesCopyAppValue((CFStringRef)kPXHookPrefsPerAppKey, (CFStringRef)kPXHookPrefsDomain);
+    // Read prefs via CFPreferences/NSUserDefaults suite (works inside sandboxed app processes)
+    NSUserDefaults *ud = [[NSUserDefaults alloc] initWithSuiteName:kPXHookPrefsDomain];
 
-    NSDictionary *global = nil;
-    NSDictionary *perAppAll = nil;
-
-    if (gVal) {
-        if (CFGetTypeID(gVal) == CFDictionaryGetTypeID()) {
-            global = [(__bridge NSDictionary *)gVal copy];
-        }
-        CFRelease(gVal);
-    }
-    if (pVal) {
-        if (CFGetTypeID(pVal) == CFDictionaryGetTypeID()) {
-            perAppAll = [(__bridge NSDictionary *)pVal copy];
-        }
-        CFRelease(pVal);
-    }
-
-    // Fallback: some setups write the plist directly (or CFPreferences cache is stale).
-    // If CFPreferences didn’t give us usable dictionaries, read the canonical file.
-    if (![global isKindOfClass:[NSDictionary class]] || ![perAppAll isKindOfClass:[NSDictionary class]]) {
-        NSString *path = jbroot(@"/var/mobile/Library/Preferences/com.projectx.hookprefs.plist");
-        NSDictionary *fileDict = [NSDictionary dictionaryWithContentsOfFile:path];
-        if ([fileDict isKindOfClass:[NSDictionary class]]) {
-            NSDictionary *g2 = fileDict[kPXHookPrefsGlobalKey];
-            NSDictionary *p2 = fileDict[kPXHookPrefsPerAppKey];
-            if ([g2 isKindOfClass:[NSDictionary class]]) global = g2;
-            if ([p2 isKindOfClass:[NSDictionary class]]) perAppAll = p2;
-        }
-    }
+    NSDictionary *global = [ud dictionaryForKey:kPXHookPrefsGlobalKey];
+    NSDictionary *perApp = [ud dictionaryForKey:kPXHookPrefsPerAppKey];
 
     if (![global isKindOfClass:[NSDictionary class]]) global = @{};
-    if (![perAppAll isKindOfClass:[NSDictionary class]]) perAppAll = @{};
+    if (![perApp isKindOfClass:[NSDictionary class]]) perApp = @{};
 
-    // Merge defaults so missing keys are treated as YES.
-    NSDictionary *defaults = PXDefaultHookOptions();
-    NSMutableDictionary *mergedGlobal = [defaults mutableCopy];
+    // Merge with defaults so missing keys always have a value
+    NSDictionary *defaultGlobal = PXDefaultGlobalOptions();
+    NSMutableDictionary *mergedGlobal = [defaultGlobal mutableCopy];
     [mergedGlobal addEntriesFromDictionary:global];
 
     return @{
-        kPXHookPrefsGlobalKey: mergedGlobal,
-        kPXHookPrefsPerAppKey: perAppAll
+        kPXHookPrefsGlobalKey: mergedGlobal ?: defaultGlobal ?: @{},
+        kPXHookPrefsPerAppKey: perApp ?: @{}
     };
 }
+
 
 static void PXLoadPrefsLocked(void) {
     gPXPrefs = PXCopyPrefsSnapshot();
