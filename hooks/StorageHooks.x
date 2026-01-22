@@ -10,6 +10,23 @@
 
 // Constants for proper size calculations - use only marketing units (1000-based)
 #import "PXHookOptions.h"
+
+// Runtime gate so Global/Per-App toggles take effect immediately.
+// IMPORTANT: Every hook in this file must consult this before spoofing.
+static inline BOOL PXStorageHookEnabledRuntime(void) {
+    return PXHookEnabled(@"storage");
+}
+
+// Facebook is extremely sensitive to some low-level storage-related queries.
+// We still spoof storage for Facebook, but we avoid the IOKit property hook that
+// has been observed to trigger crashes (SIGBUS in CFRelease on disk IO threads).
+static inline BOOL PXIsFacebookProcess(void) {
+    CFBundleRef mainBundle = CFBundleGetMainBundle();
+    if (!mainBundle) return NO;
+    CFStringRef bid = CFBundleGetIdentifier(mainBundle);
+    if (!bid) return NO;
+    return CFStringCompare(bid, CFSTR("com.facebook.Facebook"), 0) == kCFCompareEqualTo;
+}
 #define BYTES_PER_KB (1000ULL)
 #define BYTES_PER_MB (1000ULL * 1000ULL)
 #define BYTES_PER_GB (1000ULL * 1000ULL * 1000ULL)
@@ -298,6 +315,11 @@ static int replaced_statfs(const char *path, struct statfs *buf) {
     if (!orig_statfs) {
         return -1;
     }
+
+    // Respect Global/Per-App toggle at runtime.
+    if (!PXStorageHookEnabledRuntime()) {
+        return orig_statfs(path, buf);
+    }
     
     // Call original function
     int ret = orig_statfs(path, buf);
@@ -331,6 +353,10 @@ static int replaced_statfs64(const char *path, struct statfs64 *buf) {
     if (!orig_statfs64) {
         return -1;
     }
+
+    if (!PXStorageHookEnabledRuntime()) {
+        return orig_statfs64(path, buf);
+    }
     
     // Call original function
     int ret = orig_statfs64(path, buf);
@@ -363,6 +389,14 @@ static int replaced_getfsstat(struct statfs *buf, int bufsize, int flags) {
     }
     if (!orig_getfsstat) {
         return -1;
+    }
+
+    if (!PXStorageHookEnabledRuntime()) {
+        return orig_getfsstat(buf, bufsize, flags);
+    }
+
+    if (!PXStorageHookEnabledRuntime()) {
+        return orig_getfsstat(buf, bufsize, flags);
     }
     
     // Call original function
@@ -401,6 +435,10 @@ static int replaced_getfsstat64(struct statfs64 *buf, int bufsize, int flags) {
     if (!orig_getfsstat64) {
         return -1;
     }
+
+    if (!PXStorageHookEnabledRuntime()) {
+        return orig_getfsstat64(buf, bufsize, flags);
+    }
     
     // Call original function
     int ret = orig_getfsstat64(buf, bufsize, flags);
@@ -435,6 +473,13 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
     if (!orig_IORegistryEntryCreateCFProperty) {
         return NULL;
     }
+
+    // If Storage is disabled (or for Facebook we keep IOKit untouched to avoid CFRelease issues),
+    // just pass-through.
+    if (!PXStorageHookEnabledRuntime() || PXIsFacebookProcess()) {
+        return orig_IORegistryEntryCreateCFProperty(entry, key, allocator, options);
+    }
+
     CFTypeRef result = orig_IORegistryEntryCreateCFProperty(entry, key, allocator, options);
     
     if (!result || !key ) {
@@ -499,6 +544,10 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 %hook NSFileManager
 
 - (NSDictionary *)attributesOfFileSystemForPath:(NSString *)path error:(NSError **)error {
+    if (!PXStorageHookEnabledRuntime()) {
+        return %orig;
+    }
+
     NSDictionary *originalAttributes = %orig;
     
     if (!originalAttributes) {
@@ -538,6 +587,10 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 
 // Hook the direct volume capacity method added in iOS 11+
 - (unsigned long long)volumeAvailableCapacityForImportantUsageForURL:(NSURL *)url error:(NSError **)error {
+    if (!PXStorageHookEnabledRuntime()) {
+        return %orig;
+    }
+
     unsigned long long originalCapacity = %orig;
     
     @try {
@@ -557,6 +610,10 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 
 // Hook the direct total capacity method added in iOS 11+
 - (unsigned long long)volumeTotalCapacityForURL:(NSURL *)url error:(NSError **)error {
+    if (!PXStorageHookEnabledRuntime()) {
+        return %orig;
+    }
+
     unsigned long long originalCapacity = %orig;
     
     @try {
@@ -576,6 +633,10 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 
 // Add iOS 13+ method
 - (unsigned long long)volumeAvailableCapacityForOpportunisticUsageForURL:(NSURL *)url error:(NSError **)error {
+    if (!PXStorageHookEnabledRuntime()) {
+        return %orig;
+    }
+
     unsigned long long originalCapacity = %orig;
     
     @try {
@@ -600,6 +661,10 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 
 // Hook NSURL's getResourceValue:forKey:error: method for iOS 15+ compatibility
 - (BOOL)getResourceValue:(id *)value forKey:(NSURLResourceKey)key error:(NSError **)error {
+    if (!PXStorageHookEnabledRuntime()) {
+        return %orig;
+    }
+
     BOOL result = %orig;
     
     if (!result || !value || !*value || !key) {
@@ -655,6 +720,10 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 
 // Hook NSURL's resourceValuesForKeys:error: method for iOS 15+ compatibility
 - (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError **)error {
+    if (!PXStorageHookEnabledRuntime()) {
+        return %orig;
+    }
+
     NSDictionary<NSURLResourceKey, id> *originalValues = %orig;
     
     if (!originalValues || !keys) {
