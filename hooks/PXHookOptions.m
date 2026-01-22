@@ -43,7 +43,7 @@ static NSDictionary *PXCopyPrefsSnapshot(void) {
     if (![perApp isKindOfClass:[NSDictionary class]]) perApp = @{};
 
     // Merge with defaults so missing keys always have a value
-    NSDictionary *defaultGlobal = PXDefaultHookOptions();
+    NSDictionary *defaultGlobal = PXDefaultGlobalOptions();
     NSMutableDictionary *mergedGlobal = [defaultGlobal mutableCopy];
     [mergedGlobal addEntriesFromDictionary:global];
 
