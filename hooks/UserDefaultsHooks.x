@@ -112,6 +112,26 @@ static BOOL PXLooksLikeUUIDString(NSString *s) {
     return NO;
 }
 
+// Enable verbose type-mismatch diagnostics ONLY for Facebook.
+// This helps us tighten the key pattern safely without spamming logs for all apps.
+static BOOL PXIsFacebookProcess(void) {
+    static BOOL isFB = NO;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"";
+        isFB = [bid isEqualToString:@"com.facebook.Facebook"] || [bid hasPrefix:@"com.facebook."];
+    });
+    return isFB;
+}
+
+static void PXLogTypeMismatch(NSString *api, NSString *key, id value) {
+    if (!PXIsFacebookProcess()) return;
+    NSString *cls = value ? NSStringFromClass([value class]) : @"(nil)";
+    // Avoid huge dumps; just show a short description.
+    NSString *desc = value ? [[value description] substringToIndex:MIN((NSUInteger)120, [[value description] length])] : @"";
+    PXLog(@"[UserDefaultsHook][TypeMismatch] %@ key='%@' class=%@ desc=%@", api, key, cls, desc);
+}
+
 #pragma mark - NSUserDefaults Hooks
 %group PX_userdefaults
 
@@ -124,6 +144,29 @@ static BOOL PXLooksLikeUUIDString(NSString *s) {
         id originalValue = %orig;
         if (!isUUIDKey(defaultName) || !originalValue) {
             // Not a UUID-like key, or no value -> do not interfere
+            return originalValue;
+        }
+
+        // Type-mismatch guard (Facebook-only logging): if our key pattern
+        // matches but the underlying type is something we don't handle,
+        // don't spoof it.
+        if (![originalValue isKindOfClass:[NSString class]] &&
+            ![originalValue isKindOfClass:[NSData class]] &&
+            ![originalValue isKindOfClass:[NSUUID class]] &&
+            ![originalValue isKindOfClass:[NSDictionary class]] &&
+            ![originalValue isKindOfClass:[NSArray class]]) {
+            PXLogTypeMismatch(@"objectForKey", defaultName, originalValue);
+            return originalValue;
+        }
+
+        // If the key matches our UUID patterns but the stored value is a surprising type,
+        // DO NOT attempt to spoof it. Just log (Facebook only) so we can refine patterns.
+        if (![originalValue isKindOfClass:[NSString class]] &&
+            ![originalValue isKindOfClass:[NSData class]] &&
+            ![originalValue isKindOfClass:[NSUUID class]] &&
+            ![originalValue isKindOfClass:[NSDictionary class]] &&
+            ![originalValue isKindOfClass:[NSArray class]]) {
+            PXLogTypeMismatch(@"objectForKey", defaultName, originalValue);
             return originalValue;
         }
 
@@ -163,6 +206,7 @@ static BOOL PXLooksLikeUUIDString(NSString *s) {
             return processDictionaryValues(originalValue);
         }
         
+        // If we get here, we decided not to spoof.
         return originalValue;
     } @catch (NSException *exception) {
         PXLog(@"[WeaponX] ⚠️ Exception in objectForKey hook: %@", exception);
@@ -310,6 +354,17 @@ static BOOL PXLooksLikeUUIDString(NSString *s) {
 // Base setter method
 - (void)setObject:(id)value forKey:(NSString *)defaultName {
     @try {        
+        // Diagnostics: if the key matches our UUID patterns but the caller
+        // is saving an unexpected type, log it for Facebook only.
+        if (isUUIDKey(defaultName) && value &&
+            ![value isKindOfClass:[NSString class]] &&
+            ![value isKindOfClass:[NSData class]] &&
+            ![value isKindOfClass:[NSUUID class]] &&
+            ![value isKindOfClass:[NSDictionary class]] &&
+            ![value isKindOfClass:[NSArray class]]) {
+            PXLogTypeMismatch(@"setObject:forKey", defaultName, value);
+        }
+
         // If setting a UUID value, replace with our spoofed UUID
         if (isUUIDKey(defaultName) && [value isKindOfClass:[NSString class]]) {
             NSString *spoofedUUID = CurrentPhoneInfo().userDefaultsUUID;
@@ -390,8 +445,6 @@ static BOOL PXLooksLikeUUIDString(NSString *s) {
 }
 
 %end
-
-%end // <== BẠN CẦN THÊM DÒNG NÀY ĐỂ ĐÓNG KHỐI %group PX_userdefaults
 
 #pragma mark - Constructor
 
