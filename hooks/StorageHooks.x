@@ -345,6 +345,20 @@ static int replaced_statfs(const char *path, struct statfs *buf) {
 }
 
 // Replacement for statfs64 (64-bit variant)
+
+// fstatfs wrapper (file descriptor based)
+static int replaced_fstatfs(int fd, struct statfs *buf) {
+    if (!orig_fstatfs) return -1;
+    int result = orig_fstatfs(fd, buf);
+    if (result != 0 || !buf) return result;
+    @try {
+        if (PXHookEnabled(@"storage")) {
+            modifyStatfsWithSpoofedValues(buf);
+        }
+    } @catch (NSException *exception) {}
+    return result;
+}
+
 static int replaced_statfs64(const char *path, struct statfs64 *buf) {
     // Check for null pointers
     if (!path || !buf) {
@@ -785,7 +799,7 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
 // 2 = NSURL-only
 // 3 = POSIX/statfs-only
 #ifndef PX_STORAGE_BRANCH
-#define PX_STORAGE_BRANCH 3
+#define PX_STORAGE_BRANCH 1
 #endif
 
 %ctor {
@@ -807,27 +821,27 @@ static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_registry_entry_t en
             // POSIX/statfs hooks only
             void *statfsPtr = dlsym(RTLD_DEFAULT, "statfs");
             if (statfsPtr) {
-                MSHookFunction(statfsPtr, (void *)hooked_statfs, (void **)&orig_statfs);
+                MSHookFunction(statfsPtr, (void *)replaced_statfs, (void **)&orig_statfs);
                 PXLog(@"[StorageHook] Hooked statfs");
             }
             void *statfs64Ptr = dlsym(RTLD_DEFAULT, "statfs64");
             if (statfs64Ptr) {
-                MSHookFunction(statfs64Ptr, (void *)hooked_statfs64, (void **)&orig_statfs64);
+                MSHookFunction(statfs64Ptr, (void *)replaced_statfs64, (void **)&orig_statfs64);
                 PXLog(@"[StorageHook] Hooked statfs64");
             }
             void *fstatfsPtr = dlsym(RTLD_DEFAULT, "fstatfs");
             if (fstatfsPtr) {
-                MSHookFunction(fstatfsPtr, (void *)hooked_fstatfs, (void **)&orig_fstatfs);
+                MSHookFunction(fstatfsPtr, (void *)replaced_fstatfs, (void **)&orig_fstatfs);
                 PXLog(@"[StorageHook] Hooked fstatfs");
             }
             void *getfsstatPtr = dlsym(RTLD_DEFAULT, "getfsstat");
             if (getfsstatPtr) {
-                MSHookFunction(getfsstatPtr, (void *)hooked_getfsstat, (void **)&orig_getfsstat);
+                MSHookFunction(getfsstatPtr, (void *)replaced_getfsstat, (void **)&orig_getfsstat);
                 PXLog(@"[StorageHook] Hooked getfsstat");
             }
             void *getfsstat64Ptr = dlsym(RTLD_DEFAULT, "getfsstat64");
             if (getfsstat64Ptr) {
-                MSHookFunction(getfsstat64Ptr, (void *)hooked_getfsstat64, (void **)&orig_getfsstat64);
+                MSHookFunction(getfsstat64Ptr, (void *)replaced_getfsstat64, (void **)&orig_getfsstat64);
                 PXLog(@"[StorageHook] Hooked getfsstat64");
             }
             PXLog(@"[StorageHook] Enabled POSIX/statfs hooks only");
